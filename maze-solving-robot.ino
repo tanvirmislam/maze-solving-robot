@@ -23,6 +23,8 @@
 #define TURN_ASSIST_SPEED     120
 #define TURN_SPEED            80
 
+// Distance thresholds
+#define STOPPING_DISTANCE     20    // Stop if front sensor reads a distance less than this
 
 // Define ultrasonic sensor objects
 NewPing sonarRight(SRIGHT_TRIG_PIN, SRIGHT_ECHO_PIN, MAX_DISTANCE); 
@@ -48,6 +50,8 @@ int     leftMotorSpeed;
 int     rightMotorSpeed;
 
 boolean isMovingForward;
+boolean isMovingLeft;
+boolean isMovingRight;
 
 
 // PID Parameters
@@ -82,7 +86,8 @@ void setup() {
 
   // State parameters
   isMovingForward   = false;
-  
+  isMovingLeft      = false;
+  isMovingRight     = false;
 }
 
 
@@ -103,8 +108,9 @@ void loop() {
 // Maze follower function
 //----------------------------------------------------
 
+// Left wall follower
 void followMaze() {
-    
+  //if ()  
 }
 
 
