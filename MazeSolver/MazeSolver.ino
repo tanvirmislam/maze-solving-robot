@@ -43,7 +43,7 @@ STATE previousState;
 // Distance constants
 //---------------------------------------------------------------------
 #define MAX_DISTANCE                    100
-#define STOPPING_DISTANCE               15    // Stop if front sensor reads a distance less than this
+#define STOPPING_DISTANCE               20    // Stop if front sensor reads a distance less than this
 #define WALL_VISIBILITY_THRESHOLD       30
 #define SIDE_DIFFERENCE_THRESHOLD       5
 
@@ -75,17 +75,20 @@ boolean isRightWallVisible;
 //---------------------------------------------------------------------
 #define STRAIGHT_PATH_SPEED             100
 
-#define SLIGHT_TURN_ASSIST_SPEED        95
-#define SLIGHT_TURN_SPEED               80
+#define SLIGHT_TURN_ASSIST_SPEED        90
+#define SLIGHT_TURN_SPEED               75
 #define SLIGHT_TURN_DURATION            100
  
 #define HARSH_TURN_ASSIST_SPEED         120
 #define HARSH_TURN_SPEED                60
-#define SLIGHT_TURN_DURATION            100
 
-#define ADJUST_PATH_ASSIST_SPEED        95
+#define ADJUST_PATH_ASSIST_SPEED        105
 #define ADJUST_PATH_SPEED               75
 #define ADJUST_PATH_DURATION            500
+
+// For new battery
+#define NINETY_DEGREE_LEFT_CM           15.50
+#define NINETY_DEGREE_RIGHT_CM          14.00
 
 
 const byte MOTOR_RIGHT = 3;  // Motor 2 Interrupt Pin - INT 1 - Right Motor
@@ -119,6 +122,8 @@ int delta_left  = 0;
 int delta_right = 20;
 
 
+boolean isMovingForward;
+
 
 //---------------------------------------------------------------------
 // Gyro Reading
@@ -134,8 +139,10 @@ float current_angle = 0.0;
 //***************************************************************************************************************************
 
 void setup() {
+    delay(5000);
+    
     // Serial monitor
-    Serial.begin(9600);
+    //Serial.begin(9600);
 
     // Attach the Interrupts to their ISR's
     attachInterrupt(digitalPinToInterrupt (MOTOR_RIGHT), ISR_count_right, RISING);  // Increase counter A when speed sensor pin goes High
@@ -151,8 +158,8 @@ void setup() {
 
     //initialize_gyro();
     //current_angle = getAngle();
-    
-    delay(3000);
+
+    isMovingForward = false;
 } 
 
 
@@ -165,45 +172,25 @@ void setup() {
 void loop() {
     readDistance();
     detectState();
+    navigateMaze();
 
+    //turnRightNinetyDegrees();
+    //pause(2000);
     
-//    digitalWrite(in3, HIGH);
-//    digitalWrite(in4, LOW);
-//    analogWrite(enB, 100);
-//
-//    printEncoderCounter();
-
-//    uTurn();
-//    delay(2000);
-
-//    left();
-//    delay(3000);
-//
-//    left();
-//    delay(2000);
-
-//    current_angle = getAngle();
-//    Serial.println(current_angle);
-
-//    readDistance();
-//    printDistances();
-
-    //left();
+    //turnRightNinetyDegrees();
+    //uTurn();
+    
+    //printState();
+    
+    //pause(2000);
 
     //turnLeftNinetyDegrees();
-    //delay(2000);
 
-//    navigateStraight();
-
-    // moveForward(STRAIGHT_PATH_SPEED, STRAIGHT_PATH_SPEED);
-    solveMaze();
-
-    previousState = currentState;
+    //pause(2000);
 }
 
 
-
-
+                         
 //***************************************************************************************************************************
 // Ultrasonic Sensor Functions
 //***************************************************************************************************************************
@@ -212,6 +199,10 @@ void loop() {
 // Read distance using ultrasound sensor
 //---------------------------------------------------------------------
 void readDistance() {
+    leftDistance  =  sonarLeft.ping_cm() ;
+    rightDistance =  sonarRight.ping_cm();
+    frontDistance =  sonarFront.ping_cm();
+
     leftDistance  =  sonarLeft.ping_cm() ;
     rightDistance =  sonarRight.ping_cm();
     frontDistance =  sonarFront.ping_cm();
@@ -246,7 +237,13 @@ void readDistance() {
 // Detect state
 //----------------------------------------------------
 void detectState() {
-    if (isObstacleDetected == false && isLeftWallVisible == true && isRightWallVisible == true) {
+    if (isObstacleDetected == true && isLeftWallVisible == true && isRightWallVisible == true) {
+        currentState = DEAD_END;
+    }
+    else if (isObstacleDetected == true && isLeftWallVisible == false && isRightWallVisible == false) {
+        currentState = LEFT_AND_RIGHT_OPEN;  
+    }
+    else if (isObstacleDetected == false && isLeftWallVisible == true && isRightWallVisible == true) {
         currentState = ONLY_FRONT_OPEN;
     }
     else if (isObstacleDetected == true && isLeftWallVisible == false && isRightWallVisible == true) {
@@ -255,17 +252,11 @@ void detectState() {
     else if (isObstacleDetected == true && isLeftWallVisible == true && isRightWallVisible == false) {
         currentState = ONLY_RIGHT_OPEN;  
     }
-    else if (isObstacleDetected == false && isLeftWallVisible == false && isRightWallVisible == true) {
+    else if (isFrontWallVisible == false && isLeftWallVisible == false && isRightWallVisible == true) {
         currentState = LEFT_AND_FRONT_OPEN;
     }
-    else if (isObstacleDetected == false && isLeftWallVisible == true && isRightWallVisible == false) {
+    else if (isFrontWallVisible == false && isLeftWallVisible == true && isRightWallVisible == false) {
         currentState = RIGHT_AND_FRONT_OPEN;  
-    }
-    else if (isObstacleDetected == true && isLeftWallVisible == false && isRightWallVisible == false) {
-        currentState = LEFT_AND_RIGHT_OPEN;  
-    }
-    else if (isObstacleDetected == true && isLeftWallVisible == true && isRightWallVisible == true) {
-        currentState = DEAD_END;
     }
     else {
         currentState = OPEN;  
@@ -323,15 +314,33 @@ int cmToSteps(float cm) {
 //---------------------------------------------------------------------
 // Function to Move Forward Indefinitey with Given Speed
 //---------------------------------------------------------------------
+boolean initMove() {
+    if (!isMovingForward) {
+        // Set LEFT MOTOR forward
+        digitalWrite(in1, HIGH);
+        digitalWrite(in2, LOW);
+    
+        // Set RIGHT MOTOR forward
+        digitalWrite(in3, HIGH);
+        digitalWrite(in4, LOW);       
+
+        isMovingForward = true;
+
+        return true;
+    }
+
+    return false;
+}
+
 void moveForward(int lm_spd, int rm_spd) {
-    // Set LEFT MOTOR forward
-    digitalWrite(in1, HIGH);
-    digitalWrite(in2, LOW);
+    boolean hasInit = initMove();
 
-    // Set RIGHT MOTOR forward
-    digitalWrite(in3, HIGH);
-    digitalWrite(in4, LOW);
-
+    //if (hasInit) {
+    //    analogWrite(enA, 200);
+    //    analogWrite(enB, 200);
+    //    delay(2);
+    //}
+    
     analogWrite(enA, lm_spd + delta_left);
     analogWrite(enB, rm_spd + delta_right);
 }
@@ -340,16 +349,10 @@ void moveForward(int lm_spd, int rm_spd) {
 // Function to Move Forward
 //---------------------------------------------------------------------
 void stepForward(int steps, int lm_speed, int rm_speed) {
+    initMove();
+    
     counter_right = 0;  //  reset counter right to zero
     counter_left  = 0;  //  reset counter left  to zero
-   
-    // Set LEFT MOTOR forward
-    digitalWrite(in1, HIGH);
-    digitalWrite(in2, LOW);
-
-    // Set RIGHT MOTOR forward
-    digitalWrite(in3, HIGH);
-    digitalWrite(in4, LOW);
    
     // Go forward until step value is reached
     while (steps > counter_left && steps > counter_right) {
@@ -379,50 +382,6 @@ void stepForward(int steps, int lm_speed, int rm_speed) {
     counter_right = 0;  //  reset counter B to zero 
 }
 
-//---------------------------------------------------------------------
-// Function to Move in Reverse
-//---------------------------------------------------------------------
-void stepReverse(int steps, int lm_speed, int rm_speed) {
-    counter_right = 0;  //  reset counter right to zero
-    counter_left  = 0;  //  reset counter left  to zero
-   
-    // Set LEFT MOTOR forward
-    digitalWrite(in1, LOW);
-    digitalWrite(in2, HIGH);
-
-    // Set RIGHT MOTOR forward
-    digitalWrite(in3, LOW);
-    digitalWrite(in4, HIGH);
-   
-    // Go forward until step value is reached
-    while (steps > counter_left && steps > counter_right) {
-        // Check left
-        if (steps > counter_left) {
-            analogWrite(enA, lm_speed + delta_left);
-        }
-        else {
-            analogWrite(enA, 0);
-        }
-
-        // Check right
-        if (steps > counter_right) {
-            analogWrite(enB, rm_speed + delta_right);
-        } 
-        else {
-            analogWrite(enB, 0);
-        }
-    
-    }
-    
-    // Stop when done
-    analogWrite(enA, 0);
-    analogWrite(enB, 0);
-    
-    counter_left  = 0;  //  reset counter A to zero
-    counter_right = 0;  //  reset counter B to zero
-}
-
-
 
 //---------------------------------------------------------------------
 // Function to Spin Left
@@ -439,6 +398,8 @@ void spinLeftWithBothWheels(int steps, int mspeed) {
     digitalWrite(in3, HIGH);
     digitalWrite(in4, LOW);
    
+    isMovingForward = false;
+    
     // Go until step value is reached
     while (steps > counter_left && steps > counter_right) {
         // Check left
@@ -485,6 +446,8 @@ void spinLeftWithOneWheel(int steps, int mspeed) {
 
     // Left motor is not moving
     analogWrite(enA, 0);
+
+    isMovingForward = false;
     
     // Go until step value is reached
     while (steps > counter_right) {
@@ -521,7 +484,9 @@ void spinRightWithBothWheels(int steps, int mspeed) {
     // Set RIGHT MOTOR reverse
     digitalWrite(in3, LOW);
     digitalWrite(in4, HIGH);
-   
+
+    isMovingForward = false;
+    
     // Go until step value is reached
     while (steps > counter_left && steps > counter_right) {
         // Check left
@@ -567,7 +532,9 @@ void spinRightWithOneWheel(int steps, int mspeed) {
 
     // Righ motor is not moving
     analogWrite(enB, 0);
-   
+
+    isMovingForward = false;
+    
     // Go until step value is reached
     while (steps > counter_left) {
         // Check left
@@ -594,7 +561,8 @@ void spinRightWithOneWheel(int steps, int mspeed) {
 //---------------------------------------------------------------------
 void moveStop() {
     analogWrite(enA, 0);
-    analogWrite(enB, 0);    
+    analogWrite(enB, 0);
+    isMovingForward = false;
 }
 
 
@@ -617,64 +585,20 @@ void pause(int dur) {
 // Navigate straight
 //---------------------------------------------------------------------
 void navigateStraight() {
-    if (leftDistance < 5) {
-        // Moved too much to the left, adjust path
-        pause(1000);
-
-        spinLeftWithBothWheels(2, 95);
-
-        pause(1000);
-        
-        while (leftDistance < 5) {
-            moveForward(ADJUST_PATH_SPEED, ADJUST_PATH_SPEED);
-            readDistance();  
-        }
-
-        pause(1000);
+    initMove();
+    
+    if (sideDifference < 0) {
+        moveForward(STRAIGHT_PATH_SPEED + 10, STRAIGHT_PATH_SPEED - 10); 
+        delay(SLIGHT_TURN_DURATION);
     }
-    else if (rightDistance < 5) {
-        // Moved too much to the left, adjust path
-        pause(1000);
-
-        spinRightWithBothWheels(2, 95);
-
-        pause(1000);
-        
-        while (rightDistance < 5) {
-            moveForward(ADJUST_PATH_SPEED, ADJUST_PATH_SPEED);
-            readDistance();  
-        }
-
-        pause(1000);
+    else if (sideDifference > 0) {
+        moveForward(STRAIGHT_PATH_SPEED - 10, STRAIGHT_PATH_SPEED + 10); 
+        delay(SLIGHT_TURN_DURATION);
     }
-    else if (abs(sideDifference > 2)) {
-        // Path needs slight adjustment
-        if (sideDifference < 0) {
-            // Turn slightly right
-            //while (abs(sideDifferene) > 2) {
-            //    moveForward(SLIGHT_TURN_ASSIST_SPEED, SLIGHT_TURN_SPEED); 
-            //    readDistance(); 
-            //}
-            
-            moveForward(SLIGHT_TURN_ASSIST_SPEED, SLIGHT_TURN_SPEED); 
-            delay(SLIGHT_TURN_DURATION);
-        }
-        else if (sideDifference > 0) {
-            // Turn slightly left
-            //while (abs(sideDifferene) > 2) {
-            //    moveForward(SLIGHT_TURN_SPEED, SLIGHT_TURN_ASSIST_SPEED); 
-            //    readDistance(); 
-            //}
-            
-            moveForward(SLIGHT_TURN_SPEED, SLIGHT_TURN_ASSIST_SPEED); 
-            delay(SLIGHT_TURN_DURATION);
-        }
-    }
-    else {
-        // Path is good, go straight
-        moveForward(STRAIGHT_PATH_SPEED, STRAIGHT_PATH_SPEED);   
-    }
+
+    moveForward(STRAIGHT_PATH_SPEED, STRAIGHT_PATH_SPEED); 
 }
+
 
 //---------------------------------------------------------------------
 // Navigate straight for a given amount of time
@@ -690,36 +614,24 @@ void navigateStraight(int dur) {
 // Take left path
 //---------------------------------------------------------------------
 void takeLeftPath() {
-    pause(2000);
+    pause(1000);
     turnLeftNinetyDegrees();
-    pause(2000);
-    navigateStraight(500);
-
-//    int initLeftDistance  = leftDistance;
-//    int initRightDistance = rightDistance;
-//    int initFrontDistance = frontDistance;
-//     
-//    do {
-//       moveStop();
-//       delay(500);
-//       spinLeftWithBothWheels(2, 90);
-//       moveStop();
-//       delay(500); 
-//
-//       readDistance();
-//       
-//    } while (leftDistance < WALL_VISIBILITY_THRESHOLD || abs(rightDistance - 2) > initFrontDistance );
-
+    isMovingForward = false;
+    pause(1000);
+    navigateStraight(400);
+    //pause(1000);
 }
 
 //---------------------------------------------------------------------
 // Take right path
 //---------------------------------------------------------------------
 void takeRightPath() {
-    pause(2000);
+    pause(1000);
     turnRightNinetyDegrees();
+    isMovingForward = false;
     pause(2000);
-    navigateStraight(500);
+    navigateStraight(400);
+    //pause(1000);
 }
 
 
@@ -728,7 +640,7 @@ void takeRightPath() {
 //---------------------------------------------------------------------
 void turnLeftNinetyDegrees() {
     // spinLeftWithBothWheels(8,94);
-    spinLeftWithOneWheel(cmToSteps(16.07), 95);       
+    spinLeftWithOneWheel(cmToSteps(NINETY_DEGREE_LEFT_CM), 95);       
 }
 
 //---------------------------------------------------------------------
@@ -736,7 +648,7 @@ void turnLeftNinetyDegrees() {
 //---------------------------------------------------------------------
 void turnRightNinetyDegrees() {
     // spinRightWithBothWheels(8, 96);    
-    spinRightWithOneWheel(cmToSteps(16.67), 95);
+    spinRightWithOneWheel(cmToSteps(NINETY_DEGREE_RIGHT_CM), 95);
 }
 
 
@@ -745,9 +657,8 @@ void turnRightNinetyDegrees() {
 //---------------------------------------------------------------------
 void uTurn() {
     pause(2000);
-    turnLeftNinetyDegrees();
-    delay(1000);
-    turnLeftNinetyDegrees();
+    //turnLeftNinetyDegrees();
+    spinRightWithBothWheels(14,91);    
     pause(2000);
 }
 
@@ -856,14 +767,15 @@ void printEncoderCounter() {
 //***************************************************************************************************************************
 // MAZE SOLVER
 //***************************************************************************************************************************
-void solveMaze() {
+void navigateMaze() {
     switch (currentState) {
+        case LEFT_AND_RIGHT_OPEN:
+            takeLeftPath();
+            break;
         case ONLY_FRONT_OPEN:
-            //moveForward(STRAIGHT_PATH_SPEED, STRAIGHT_PATH_SPEED);
             navigateStraight();
             break;
         case ONLY_LEFT_OPEN:
-            //turnLeftNinetyDegrees();
             takeLeftPath();
             break;
         case ONLY_RIGHT_OPEN:
@@ -873,11 +785,8 @@ void solveMaze() {
             takeLeftPath();
             break;
         case RIGHT_AND_FRONT_OPEN:
-            navigateStraigt();
-            break;
-        case LEFT_AND_RIGHT_OPEN:
-            takeLeftPath();
-            break;
+            navigateStraight();
+            break;  
         case DEAD_END:
             uTurn();
             break;
